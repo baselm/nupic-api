@@ -365,4 +365,5 @@ if __name__ == '__main__':
     tstart = time.time()
     end = str(tstart+30)
     start = str(tstart)
+    startSwarm()
     app.run(host='0.0.0.0', port='8888', debug=True)
