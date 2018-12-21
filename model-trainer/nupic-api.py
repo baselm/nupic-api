@@ -19,6 +19,65 @@ import numpy as np
 from flask.json import jsonify
 import json
 from flask import Response
+from multiprocessing import Pool
+import cpu_adapter
+import sys
+import json
+sys.path.append('mem')
+import mem_experiment
+
+sys.path.append('cpu')
+import cpu_experiment
+
+sys.path.append('disk')
+import disk_experiment
+from flask import Flask, request, abort
+
+
+finalUtilityCpu =0.0
+finalutilityDisk =0.0
+finalutilityOfmem =0.0
+maxU={'metric':'','value':0.0, 'swarmed':False, 'adapted': False, 'msg':''}
+result_adapt={}
+
+swarmed=maxU['swarmed']
+adapted=maxU['adapted']
+def runInParallel(*fns):
+  proc = []
+  for fn in fns:
+    p = Process(target=fn)
+    p.start()
+    proc.append(p)
+  for p in proc:
+    p.join()
+
+
+ 
+
+
+def run_swarm():
+    if maxU['swarmed'] == False:
+        pool = Pool(processes=3)              # Start a worker processes.
+        result = pool.apply_async(disk_experiment.run_disk_experiment)
+        result1 = pool.apply_async(cpu_experiment.run_cpu_experiment)
+        result2 = pool.apply_async(mem_experiment.run_mem_experiment)
+        print result.get(timeout=7600), result1.get(timeout=7600), result2.get(timeout=7600)
+     
+        #disk_experiment.run_disk_experiment()
+        #cpu_experiment.run_cpu_experiment()
+        #mem_experiment.run_mem_experiment()
+        #runInParallel(disk_experiment.run_disk_experiment(), cpu_experiment.run_cpu_experiment(), mem_experiment.run_mem_experiment())
+        print "swarm finished "
+        maxU['swarmed'] =True
+        maxU['msg'] ='swarm finished'
+    else:
+        print "No need to swarm  already done"
+        maxU['msg'] ='No need to swarm  already done'
+
+    return True
+
+def callback():
+    return "swarm finished in subprocess "
 
 anomalyLikelihoodHelper = anomaly_likelihood.AnomalyLikelihood()
 DATE_FORMAT = "%m/%d/%y %H:%M"
@@ -31,14 +90,45 @@ resultsA= []
 prometheus='192.168.99.100'
 app = Flask(__name__)
 aresult = {'metric': ' ', 'value':0, 'prediction':0, 'anomalyScore':0,'anomalyLikelihood':0}
-tend = time.time()
-end = str(tend)
+ 
+@app.route('/start')
+def startSwarm():
+    swarmed=maxU['swarmed']
+    print 'swarmed', swarmed
+    if swarmed==False:
+
+        print "no swarm found !"
+        
+        swarmed= run_swarm()
+        maxU['swarmed'] = swarmed
+    elif swarmed==True: 
+         maxU['swarmed'] = True
+         maxU['msg'] ="No need to swarm"
+
+    
+
+    return json.dumps(maxU)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.method == 'POST':
+        swarmed=maxU['swarmed']
+        pool = Pool(processes=1)
+        result = pool.apply_async(cpu_adapter.run, () , callback)
+        print 'result_adapt: ', result
+        print(request.json)
+        return '', 200
+    else:
+        abort(400)
 
 @app.route('/mem')
 def get_mem_observation():
+    tstart = time.time()
+    end = str(tstart+30)
+    start = str(tstart)
     model_mem_model = ModelFactory.create(model_mem.MODEL_PARAMS)
     model_mem_model.enableInference({"predictedField": "mem"})
-    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query_range?query=sum((node_memory_MemAvailable_bytes%20%2F%20node_memory_MemTotal_bytes)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D%20*%20100)%20%2F%20count(node_meta%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)&start=1544919570&end='+ end +'&step=30', timeout=5)
+    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query_range?query=sum((node_memory_MemAvailable_bytes%20%2F%20node_memory_MemTotal_bytes)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D%20*%20100)%20%2F%20count(node_meta%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)&start='+start+'&end='+ end +'&step=30', timeout=5)
     results = response.json()
     memData = results['data']['result']
     result = 0
@@ -86,9 +176,12 @@ def get_mem_observation():
     return np.array(mem_axis) 
 @app.route('/disk')
 def get_disk_observation():
+    tstart = time.time()
+    end = str(tstart+30)
+    start = str(tstart)
     model_disk_model = ModelFactory.create(model_disk.MODEL_PARAMS)
     model_disk_model.enableInference({"predictedField": "disk"})
-    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query?query=sum((node_filesystem_free%7Bmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size%7Bmountpoint%3D%22%2F%22%7D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D%20*%20100)%20%2F%20count(node_meta%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)&start=1538181830& end=' + end +'&step=30', timeout=5)
+    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query?query=sum((node_filesystem_free%7Bmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size%7Bmountpoint%3D%22%2F%22%7D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D%20*%20100)%20%2F%20count(node_meta%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)&start='+start+'& end=' + end +'&step=30', timeout=5)
     results = response.json()
     diskData = results['data']['result']
     result = 0
@@ -133,9 +226,12 @@ def get_disk_observation():
     return resp
 @app.route('/net')
 def get_net_observation():
+    tstart = time.time()
+    end = str(tstart+30)
+    start = str(tstart)
     model_net = ModelFactory.create(net_params.MODEL_PARAMS)
     model_net.enableInference({"predictedField": "bytes_sent"})
-    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query?query=sum(rate(container_network_receive_bytes_total%7Bcontainer_label_com_docker_swarm_node_id%3D~".%2B"%7D%5B30s%5D))%20by%20(container_label_com_docker_swarm_service_name)&start=1540150261& end='+ end + '&step=30', timeout=5)
+    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query?query=sum(rate(container_network_receive_bytes_total%7Bcontainer_label_com_docker_swarm_node_id%3D~".%2B"%7D%5B30s%5D))%20by%20(container_label_com_docker_swarm_service_name)&start='+start+'& end='+ end + '&step=30', timeout=5)
     results = response.json()
     diskData = results['data']['result']
     result = 0
@@ -180,14 +276,20 @@ def get_net_observation():
 
 @app.route('/')
 def hi():
-    msg= "<h1> Hi Welcome to Adaptation Manager IP: " + prometheus + " time: " + str(end) 
+    tstart = time.time()
+    end = str(tstart+30)
+    start = str(tstart)
+    msg= "<h1> Hi Welcome to Adaptation Manager IP: " + prometheus  +  " start time: " + str(start)  +  " end time: " + str(end) 
     return msg 
 @app.route('/cpu')
 def get_cpu_observation():
+    tstart = time.time()
+    end = str(tstart+30)
+    start = str(tstart)
     model_cpu_model = ModelFactory.create(model_cpu.MODEL_PARAMS)
     model_cpu_model.enableInference({"predictedField": "cpu"})
     #response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query?query=sum(irate(node_cpu_seconds_total%7Bmode%3D%22idle%22%7D%5B30s%5D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20*%20100%20%2F%20count(node_cpu%7Bmode%3D%22user%22%7D%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20&start=1544788200&end=1544788260&step=30', timeout=5)
-    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query_range?query=sum(irate(node_cpu_seconds_total%7Bmode%3D%22idle%22%7D%5B30s%5D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20*%20100%20%2F%20count(node_cpu_seconds_total%7Bmode%3D%22user%22%7D%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20&start=1544788200&end='+ end + '&step=30', timeout=5)
+    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query_range?query=sum(irate(node_cpu_seconds_total%7Bmode%3D%22idle%22%7D%5B30s%5D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20*%20100%20%2F%20count(node_cpu_seconds_total%7Bmode%3D%22user%22%7D%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20&start='+start+'&end='+ end + '&step=30', timeout=5)
 
     results = response.json()
     cpuData = results['data']['result']
@@ -236,6 +338,9 @@ def get_cpu_observation():
 
 @app.route('/data')
 def get_observation():
+    tstart = time.time()
+    end = str(tstart+30)
+    start = str(tstart)
     obs = None 
     disk_axis = get_disk_observation()
     mem_axis  = get_mem_observation()
@@ -257,5 +362,7 @@ def get_observation():
     return str(response)
 
 if __name__ == '__main__':
-    print (end, 'end') 
+    tstart = time.time()
+    end = str(tstart+30)
+    start = str(tstart)
     app.run(host='0.0.0.0', port='8888', debug=True)
