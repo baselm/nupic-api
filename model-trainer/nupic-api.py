@@ -192,9 +192,9 @@ def get_disk_observation():
     disk  = 0
     js= None
     if len(diskData) > 0:
-        diskValue = diskData[0]['values']
-        timestamp = datetime.datetime.fromtimestamp(float(diskValue[0][0])).strftime('%m/%d/%y %H:%M')
-        disk = 100 - float(diskValue[0][1])
+        diskValue = diskData[0]['value']
+        timestamp = datetime.datetime.fromtimestamp(float(diskValue[0])).strftime('%m/%d/%y %H:%M')
+        disk = 100 - float(diskValue[1])
         #print 'time: ', timestamp,' disk Usage: ',disk 
         result = model_disk_model.run({"disk": disk})
         prediction = result.inferences["multiStepBestPredictions"][1]
@@ -206,7 +206,7 @@ def get_disk_observation():
         'prediction' : float(prediction), 
         'anomalyScore': float(anomalyScore), 
         'anomalyLikelihood':float(anomalyLikelihood), 
-        'utility_mem':float(utility_disk)
+        'utility_disk':float(utility_disk)
             }
         js = json.dumps(data)
     else: 
@@ -365,4 +365,4 @@ if __name__ == '__main__':
     tstart = time.time()
     end = str(tstart+30)
     start = str(tstart)
-    app.run(host='0.0.0.0', port='8888', debug=True)
+    app.run(host='0.0.0.0', port='8881', debug=True)
