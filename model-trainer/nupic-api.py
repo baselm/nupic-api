@@ -181,7 +181,7 @@ def get_disk_observation():
     start = str(tstart)
     model_disk_model = ModelFactory.create(model_disk.MODEL_PARAMS)
     model_disk_model.enableInference({"predictedField": "disk"})
-    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query?query=sum((node_filesystem_free%7Bmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size%7Bmountpoint%3D%22%2F%22%7D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D%20*%20100)%20%2F%20count(node_meta%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)&start='+start+'& end=' + end +'&step=30', timeout=5)
+    response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query?query=sum((node_disk_io_time_weighted_seconds_total))%20%2F%20avg(node_disk_io_time_weighted_seconds_total)%20*%20count(node_meta%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~".%2B"%7D)&start='+start+'& end=' + end +'&step=30', timeout=5)
     results = response.json()
     diskData = results['data']['result']
     result = 0
@@ -192,9 +192,9 @@ def get_disk_observation():
     disk  = 0
     js= None
     if len(diskData) > 0:
-        diskValue = diskData[0]['value']
-        timestamp = datetime.datetime.fromtimestamp(float(diskValue[0])).strftime('%m/%d/%y %H:%M')
-        disk = 100 - float(diskValue[1])
+        diskValue = diskData[0]['values']
+        timestamp = datetime.datetime.fromtimestamp(float(diskValue[0][0])).strftime('%m/%d/%y %H:%M')
+        disk = 100 - float(diskValue[0][1])
         #print 'time: ', timestamp,' disk Usage: ',disk 
         result = model_disk_model.run({"disk": disk})
         prediction = result.inferences["multiStepBestPredictions"][1]
@@ -365,5 +365,4 @@ if __name__ == '__main__':
     tstart = time.time()
     end = str(tstart+30)
     start = str(tstart)
-    startSwarm()
     app.run(host='0.0.0.0', port='8888', debug=True)

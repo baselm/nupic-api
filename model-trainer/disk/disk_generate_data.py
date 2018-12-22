@@ -28,35 +28,37 @@ import psutil
 import datetime
 import time
 import requests
-from nupic.algorithms import anomaly_likelihood
-
-anomalyLikelihoodHelper = anomaly_likelihood.AnomalyLikelihood()
-
-ROWS = 1500
-SECONDS_PER_STEP= 1
+ROWS = 2500
 DATE_FORMAT = "%m/%d/%y %H:%M"
-def run(filename="desk.csv"):
+prometheus='192.168.99.100'
+def run(filename="cpu.csv"):
   print "Generating sine data into %s" % filename
-  fileHandle1 = open(filename,"w")
-  writer1 = csv.writer(fileHandle1)
-  writer1.writerow(["timestamp","disk"])
-  writer1.writerow(["datetime","float"])
-  writer1.writerow(["",""])
+  fileHandle = open(filename,"w")
+  writer = csv.writer(fileHandle)
+  writer.writerow(["timestamp","cpu"])
+  writer.writerow(["datetime","float"])
+  writer.writerow(["",""])
+  cpuValue=0
   for i in range(ROWS):
-    response = requests.get('http://admin:admin@prometheus:9090/api/v1/query?query=sum((node_filesystem_free%7Bmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size%7Bmountpoint%3D%22%2F%22%7D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D%20*%20100)%20%2F%20count(node_meta%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)&start=1538181830&end=1538182730&step=30', timeout=5)
-    diskResult = response.json()
-    diskData = diskResult['data']['result']
-    if len(diskData) > 0:
-      print 'disk: ', diskData[0]['value']
-      diskValue = diskData[0]['value']
-      timestamp = datetime.datetime.fromtimestamp(float(diskValue[0])).strftime('%m/%d/%y %H:%M')
-      disk = 100 - float(diskValue[1])
-      writer1.writerow([timestamp, disk])
-    time.sleep(5)
+              tstart = time.time()
+              end = str(tstart+30)
+              start = str(tstart)
+              response = requests.get('http://admin:admin@'+prometheus+':9090/api/v1/query_range?query=sum(irate(node_cpu_seconds_total%7Bmode%3D%22idle%22%7D%5B30s%5D)%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20*%20100%20%2F%20count(node_cpu_seconds_total%7Bmode%3D%22user%22%7D%20*%20on(instance)%20group_left(node_name)%20node_meta%7Bnode_id%3D~%22.%2B%22%7D)%20&start='+start+'&end='+ end + '&step=30', timeout=5)
+              results = response.json()
+              cpuData = results['data']['result']
+              #cpuData = results['data']['result']
+              if len(cpuData) > 0:
+                cpuValue = cpuData[0]['values']
+                #print (cpuValue[0][0])
+                timestamp = datetime.datetime.fromtimestamp(float(cpuValue[0][0])).strftime('%m/%d/%y %H:%M') 
+                cpu = 100 - float(cpuValue[0][1])
+                writer.writerow([timestamp, cpu])
+              time.sleep(1)
                
-  fileHandle1.close()
-  print "Generated %i rows of output data into %s" % (ROWS, filename)
+  fileHandle.close()
 
+  print "Generated %i rows of output data into %s" % (ROWS, filename)
+ 
 
 if __name__ == "__main__":
   run()
